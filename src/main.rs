@@ -95,7 +95,7 @@ mod test {
         let req = build_todo_req_with_json(
             "/todos",
             Method::POST,
-            r#"{" "text": "should_created_todo" }"#.to_string(),
+            r#"{"text": "should_created_todo" }"#.to_string(),
         );
 
         let res = create_app(repository).oneshot(req).await.unwrap();
@@ -110,9 +110,9 @@ mod test {
         // repo作成
         let repository = TodoRepositoryForMemory::new();
         // repoから、Todoを作成
-        repository.create(CreateTodo::new("should_created_todo".to_string()));
+        repository.create(CreateTodo::new("should_find_todo".to_string()));
         // リクエストを作成
-        let req = build_todo_req_with_empty("/todo/1", Method::GET);
+        let req = build_todo_req_with_empty("/todos/1", Method::GET);
         // レスポンスを作成
         let res = create_app(repository).oneshot(req).await.unwrap();
         // レスポンスから、todoを生成
@@ -143,7 +143,12 @@ mod test {
         let req = build_todo_req_with_json(
             "/todos/1",
             Method::PATCH,
-            r#"{" "text": "should_update_todo" }"#.to_string(),
+            r#"{
+              "id": 1,
+              "text": "should_update_todo",
+              "completed": false
+            }"#
+            .to_string(),
         );
         let res = create_app(repository).oneshot(req).await.unwrap();
         let todo = res_to_todo(res).await;
