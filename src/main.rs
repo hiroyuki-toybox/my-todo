@@ -55,7 +55,6 @@ mod test {
     use axum::{body::Body, http::Request};
 
     use hyper::{header, Method, StatusCode};
-    use serde::de::Expected;
     use tower::ServiceExt;
 
     fn build_todo_req_with_json(path: &str, method: Method, json_body: String) -> Request<Body> {
