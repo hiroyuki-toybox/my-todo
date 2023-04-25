@@ -5,13 +5,13 @@ use axum::routing::{get, post};
 use axum::{extract::Extension, Router};
 use dotenv::dotenv;
 use handlers::{all_todo, create_todo, delete_todo, find_todo, update_todo};
-use repositories::TodoRepository;
+use repositories::todo::TodoRepository;
 use sqlx::PgPool;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::repositories::TodoRepositoryForDb;
+use crate::repositories::todo::TodoRepositoryForDb;
 
 #[tokio::main]
 async fn main() {
@@ -62,7 +62,7 @@ async fn root() -> &'static str {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::repositories::{CreateTodo, Todo, TodoRepositoryForMemory};
+    use crate::repositories::todo::{CreateTodo, Todo, TodoRepositoryForMemory};
     use axum::response::Response;
     use axum::{body::Body, http::Request};
 
