@@ -148,7 +148,7 @@ impl TodoRepository for TodoRepositoryForDb {
     async fn create(&self, payload: CreateTodo) -> anyhow::Result<Todo> {
         let todo = sqlx::query_as::<_, Todo>(
             r#"
-          insert into todo (text, completed)
+          insert into todos (text, completed)
           values ($1, false)
           returning *
         "#,
@@ -192,8 +192,8 @@ impl TodoRepository for TodoRepositoryForDb {
         let todo = sqlx::query_as::<_, Todo>(
             r#"
             update todos set text=$1, completed=$2
-            where id = $3
-            returning
+            where id=$3
+            returning *
         "#,
         )
         .bind(payload.text.clone())
@@ -209,7 +209,7 @@ impl TodoRepository for TodoRepositoryForDb {
         Ok(todo)
     }
     async fn delete(&self, id: i32) -> anyhow::Result<()> {
-        let todo = sqlx::query(
+        sqlx::query(
             r#"
             delete from todos where id=$1
         "#,
@@ -228,7 +228,10 @@ impl TodoRepository for TodoRepositoryForDb {
 
 #[cfg(test)]
 mod test {
+    use std::env;
+
     use super::*;
+    use dotenv::dotenv;
 
     #[tokio::test]
     async fn todo_curd_scenario() {
@@ -277,5 +280,75 @@ mod test {
         repository.delete(id).await.unwrap();
         let todo = repository.find(id).await;
         assert!(!todo.is_ok());
+    }
+
+    #[tokio::test]
+    async fn crud_scenario() {
+        dotenv().ok();
+        let database_url = &env::var("DATABASE_URL").expect("undefined [DATABASE_URL]");
+
+        let pool = PgPool::connect(database_url)
+            .await
+            .expect("failed connect database");
+
+        let repository = TodoRepositoryForDb::new(pool.clone());
+        let todo_text = "[crud_scenario] text";
+
+        // create
+        let created = repository
+            .create(CreateTodo::new(todo_text.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(created.text, todo_text);
+        assert!(!created.completed);
+
+        // find
+        let finded = repository.find(created.id).await.unwrap();
+
+        assert_eq!(finded, created);
+
+        // all
+        let all = repository.all().await.unwrap();
+        let todo = all.first().unwrap();
+
+        assert_eq!(created, *todo);
+
+        // update
+        let updated_text = "[test] updated text";
+        let updated = repository
+            .update(
+                created.id,
+                UpdateTodo {
+                    text: Some(updated_text.to_string()),
+                    completed: Some(true),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            updated,
+            Todo {
+                id: created.id,
+                text: updated_text.to_string(),
+                completed: true
+            }
+        );
+
+        // delete
+        let result = repository.delete(created.id).await;
+        assert!(result.is_ok());
+
+        let todo_rows = sqlx::query(
+            r#"
+        select * from todos where id=$1
+        "#,
+        )
+        .bind(created.id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert!(todo_rows.is_empty());
     }
 }
