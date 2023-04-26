@@ -1,62 +1,84 @@
 mod handlers;
 mod repositories;
 
-use axum::routing::{get, post};
-use axum::{extract::Extension, Router};
-use dotenv::dotenv;
-use handlers::{all_todo, create_todo, delete_todo, find_todo, update_todo};
-use repositories::todo::TodoRepository;
-use sqlx::PgPool;
-use std::env;
+use crate::repositories::{
+    label::LabelRepositoryForDb,
+    todo::{TodoRepository, TodoRepositoryForDb},
+};
+use axum::{
+    extract::Extension,
+    routing::{delete, get, post},
+    Router,
+};
+use handlers::{
+    label::{all_label, create_label, delete_label},
+    todo::{all_todo, create_todo, delete_todo, find_todo, update_todo},
+};
+use repositories::label::LabelRepository;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
-use crate::repositories::todo::TodoRepositoryForDb;
+use dotenv::dotenv;
+use hyper::header::CONTENT_TYPE;
+use sqlx::PgPool;
+use tower_http::cors::{Any, CorsLayer, Origin};
 
 #[tokio::main]
 async fn main() {
     // logging
     let log_level = env::var("RUST_LOG").unwrap_or("info".to_string());
-    env::set_var("Rust_LOG", log_level);
+    env::set_var("RUST_LOG", log_level);
     tracing_subscriber::fmt::init();
     dotenv().ok();
-
-    // let repository = TodoRepositoryForMemory::new();
 
     let database_url = &env::var("DATABASE_URL").expect("undefined [DATABASE_URL]");
     tracing::debug!("start connect database...");
     let pool = PgPool::connect(database_url)
         .await
-        .expect("failed connect database");
+        .expect(&format!("fail connect database, url is [{}]", database_url));
 
-    let repository = TodoRepositoryForDb::new(pool);
-
-    let app = create_app(repository);
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let app = create_app(
+        TodoRepositoryForDb::new(pool.clone()),
+        LabelRepositoryForDb::new(pool.clone()),
+    );
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::debug!("listening on {}", addr);
-
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-fn create_app<T: TodoRepository>(repository: T) -> Router {
+fn create_app<Todo: TodoRepository, Label: LabelRepository>(
+    todo_repository: Todo,
+    label_repository: Label,
+) -> Router {
     Router::new()
         .route("/", get(root))
-        .route("/todos", post(create_todo::<T>).get(all_todo::<T>))
+        .route("/todos", post(create_todo::<Todo>).get(all_todo::<Todo>))
         .route(
             "/todos/:id",
-            get(find_todo::<T>)
-                .delete(delete_todo::<T>)
-                .patch(update_todo::<T>),
+            get(find_todo::<Todo>)
+                .delete(delete_todo::<Todo>)
+                .patch(update_todo::<Todo>),
         )
-        // axumアプリケーション内でrepositoryを共有する
-        .layer(Extension(Arc::new(repository)))
+        .route(
+            "/labels",
+            post(create_label::<Label>).get(all_label::<Label>),
+        )
+        .route("/labels/:id", delete(delete_label::<Label>))
+        .layer(Extension(Arc::new(todo_repository)))
+        .layer(Extension(Arc::new(label_repository)))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Origin::exact("http://localhost:3001".parse().unwrap()))
+                .allow_methods(Any)
+                .allow_headers(vec![CONTENT_TYPE]),
+        )
 }
 
 async fn root() -> &'static str {
-    "Hello, world!!"
+    "Hello, World!"
 }
 
 #[cfg(test)]
@@ -98,7 +120,6 @@ mod test {
         todo
     }
 
-    #[tokio::test]
     async fn should_created_todo() {
         let expected = Todo::new(1, "should_created_todo".to_string());
 
@@ -114,7 +135,6 @@ mod test {
         assert_eq!(expected, todo);
     }
 
-    #[tokio::test]
     async fn should_find_todo() {
         // 期待値作成
         let expected = Todo::new(1, "should_find_todo".to_string());
